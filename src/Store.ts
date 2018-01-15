@@ -46,6 +46,7 @@ export interface ShellState {
     sendTyping: boolean
     input: string
     listening: boolean
+    cameraRecording: boolean
     lastInputViaSpeech : boolean
 }
 
@@ -59,6 +60,10 @@ export type ShellAction = {
     type: 'Listening_Start'
 } | {
     type: 'Listening_Stop'
+} | {
+    type: 'Camera_Starting'
+} | {
+    type: 'Camera_Stopping'
 } | {
     type: 'Stop_Speaking'
 } |  {
@@ -81,6 +86,7 @@ export const shell: Reducer<ShellState> = (
         input: '',
         sendTyping: false,
         listening : false,
+        cameraRecording : false,
         lastInputViaSpeech : false
     },
     action: ShellAction
@@ -105,6 +111,18 @@ export const shell: Reducer<ShellState> = (
                 listening: false
             };
 
+        case 'Camera_Starting':
+            return {
+                ... state,
+                cameraRecording: true
+            };
+
+        case 'Camera_Stopping':
+            return {
+                ... state,
+                cameraRecording: false
+            };
+
         case 'Send_Message':
             return {
                 ... state,
@@ -125,6 +143,71 @@ export const shell: Reducer<ShellState> = (
 
         default:
         case 'Listening_Starting':
+            return state;
+    }
+}
+
+export const picTaken = (image: string, from: User, locale: string) => ({
+    type: 'Send_Message',
+    activity: {
+        type: "message",
+        attachments: [ picFromString(image) ],
+        from,
+        locale
+    }} as ChatActions);
+
+const picFromString = (imageString: string) => {
+    return {
+        contentType: 'image/png',
+        contentUrl: window.URL.createObjectURL(dataURItoBlob(imageString)),
+        name: "webcamImage"
+    };
+}
+
+// https://stackoverflow.com/questions/12168909/blob-from-dataurl
+const dataURItoBlob = (dataURI : string) => {
+    var byteString = atob(dataURI.split(',')[1]);
+    var mimeString = dataURI.split(',')[0].split(':')[1].split(';')[0]
+    var ab = new ArrayBuffer(byteString.length);
+    var ia = new Uint8Array(ab);
+
+    for (var i = 0; i < byteString.length; i++) {
+        ia[i] = byteString.charCodeAt(i);
+    }
+
+    var blob = new Blob([ab], {type: mimeString});
+    return blob;
+}
+
+export interface CameraState {
+    shown: boolean
+}
+
+export type CameraAction = {
+    type: 'Camera_Start'
+} | {
+    type: 'Camera_Stop'
+}
+
+export const camera: Reducer<CameraState> = (
+    state: CameraState = {
+        shown : false
+    },
+    action: CameraAction
+) => {
+    switch (action.type) {
+        case 'Camera_Start':
+            return {
+                ... state,
+                shown: true
+            };
+
+        case 'Camera_Stop':
+            return {
+                ... state,
+                shown: false
+            };
+        default:
             return state;
     }
 }
@@ -439,6 +522,7 @@ export interface ChatState {
     format: FormatState,
     size: SizeState,
     connection: ConnectionState,
+    camera: CameraState,
     history: HistoryState
 }
 
@@ -491,6 +575,7 @@ const sendMessageEpic: Epic<ChatActions, ChatState> = (action$, store) =>
     action$.ofType('Send_Message')
     .map(action => {
         const state = store.getState();
+        store.dispatch({ type: 'Camera_Stopping' });
         const clientActivityId = state.history.clientActivityBase + (state.history.clientActivityCounter - 1);
         return ({ type: 'Send_Message_Try', clientActivityId } as HistoryAction);
     });
@@ -593,6 +678,30 @@ const listeningSilenceTimeoutEpic: Epic<ChatActions, ChatState> = (action$, stor
             .takeUntil(cancelMessages$));
 };
 
+const startCameraEpic: Epic<ChatActions, ChatState> = (action$, store) =>
+    action$.ofType('Camera_Starting')
+    .do((action : ShellAction) => {
+        konsole.log("Camera starting");
+        const state = store.getState();
+        var onVideoStreamStart = () => { store.dispatch({ type: 'Camera_Start', source:"video" }) };
+        state.camera.shown = true;
+        store.dispatch({ type: 'Camera_Start' })
+    })
+    .map(_ => nullAction)
+
+const stopCameraEpic: Epic<ChatActions, ChatState> = (action$, store) =>
+    action$.ofType(
+        'Camera_Stopping'
+    )
+    .do((action : ShellAction) => {
+        konsole.log("Camera stopping");
+        const state = store.getState();
+        state.shell.cameraRecording = false;
+        state.camera.shown = false;
+        store.dispatch({ type: 'Camera_Stop' })
+    })
+    .map(_ => nullAction)
+
 const retrySendMessageEpic: Epic<ChatActions, ChatState> = (action$) =>
     action$.ofType('Send_Message_Retry')
     .map(action => ({ type: 'Send_Message_Try', clientActivityId: action.clientActivityId } as HistoryAction));
@@ -643,7 +752,8 @@ export const createStore = () =>
             format,
             size,
             connection,
-            history
+            history,
+            camera
         }),
         applyMiddleware(createEpicMiddleware(combineEpics(
             updateSelectedActivityEpic,
@@ -657,7 +767,9 @@ export const createStore = () =>
             startListeningEpic,
             stopListeningEpic,
             stopSpeakingEpic,
-            listeningSilenceTimeoutEpic
+            listeningSilenceTimeoutEpic,
+            startCameraEpic,
+            stopCameraEpic
         )))
     );
 

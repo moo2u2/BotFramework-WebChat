@@ -28,6 +28,7 @@ export interface ChatProps {
 }
 
 import { History } from './History';
+import { Webcam } from './Webcam';
 import { MessagePane } from './MessagePane';
 import { Shell, ShellFunctions } from './Shell';
 
@@ -42,6 +43,7 @@ export class Chat extends React.Component<ChatProps, {}> {
     private selectedActivitySubscription: Subscription;
     private shellRef: React.Component & ShellFunctions;
     private historyRef: React.Component;
+    private webcamRef: HTMLElement;
     private chatviewPanelRef: HTMLElement;
 
     private resizeListener = () => this.setSize();
@@ -50,6 +52,7 @@ export class Chat extends React.Component<ChatProps, {}> {
     private _handleKeyDownCapture = this.handleKeyDownCapture.bind(this);
     private _saveChatviewPanelRef = this.saveChatviewPanelRef.bind(this);
     private _saveHistoryRef = this.saveHistoryRef.bind(this);
+    private _saveWebcamRef = this.saveWebcamRef.bind(this);
     private _saveShellRef = this.saveShellRef.bind(this);
 
     constructor(props: ChatProps) {
@@ -150,6 +153,10 @@ export class Chat extends React.Component<ChatProps, {}> {
         this.historyRef = historyWrapper.getWrappedInstance();
     }
 
+    private saveWebcamRef(webcamRef: HTMLElement) {
+        this.webcamRef = webcamRef;
+    }
+
     private saveShellRef(shellWrapper: any) {
         if (!shellWrapper) {
             this.shellRef = null;
@@ -239,6 +246,9 @@ export class Chat extends React.Component<ChatProps, {}> {
                         <History
                             onCardAction={ this._handleCardAction }
                             ref={ this._saveHistoryRef }
+                        />
+                        <Webcam
+                            ref={ this._saveWebcamRef }
                         />
                     </MessagePane>
                     <Shell ref={ this._saveShellRef } />
